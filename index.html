@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador del Problema de los Tres Cuerpos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; 
+        }
+        .control-panel {
+            scrollbar-width: thin; 
+            scrollbar-color: #4a5568 #2d3748; 
+        }
+        .control-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+        .control-panel::-webkit-scrollbar-track {
+            background: #2d3748;
+            border-radius: 10px;
+        }
+        .control-panel::-webkit-scrollbar-thumb {
+            background-color: #4a5568;
+            border-radius: 10px;
+            border: 2px solid #2d3748;
+        }
+        canvas {
+            display: block;
+            background-color: #000010; 
+            cursor: grab;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+        .input-number-sm::-webkit-outer-spin-button,
+        .input-number-sm::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .input-number-sm[type=number] {
+            -moz-appearance: textfield; 
+            appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col md:flex-row h-screen overflow-hidden">
+
+    <div id="controls" class="control-panel w-full md:w-80 lg:w-96 bg-gray-800 p-4 space-y-4 overflow-y-auto shadow-2xl order-2 md:order-1 h-1/2 md:h-full">
+        <h2 class="text-2xl font-bold text-center text-sky-400">Parámetros</h2>
+
+        <div class="bg-gray-700 p-3 rounded-lg shadow">
+            <h3 class="text-lg font-semibold mb-2 text-sky-300">Simulación</h3>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <button id="pauseResumeButton" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-3 rounded-md transition duration-150 ease-in-out">Pausar</button>
+                <button id="resetButton" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-3 rounded-md transition duration-150 ease-in-out">Restablecer</button>
+            </div>
+            <button id="addBodyButton" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-3 rounded-md transition duration-150 ease-in-out mb-2">Agregar Cuerpo</button>
+            <div class="flex items-center space-x-2">
+                <label for="trailLength" class="text-sm whitespace-nowrap">Long. Estela:</label>
+                <input type="range" id="trailLength" min="0" max="500" value="150" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-sky-500">
+                <span id="trailLengthValue" class="text-sm w-8 text-right">150</span>
+            </div>
+             <div class="flex items-center space-x-2 mt-2">
+                <label for="timeStep" class="text-sm whitespace-nowrap">Paso Tiempo:</label>
+                <input type="range" id="timeStep" min="0.001" max="0.2" step="0.001" value="0.01" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-sky-500">
+                <span id="timeStepValue" class="text-sm w-12 text-right">0.010</span>
+            </div>
+        </div>
+
+        <div id="bodyParamsContainer" class="space-y-3">
+            </div>
+         <p class="text-xs text-gray-400 mt-4 text-center">
+            Arrastra el lienzo para mover la vista. Usa la rueda del ratón para hacer zoom.
+        </p>
+    </div>
+
+    <div class="flex-1 order-1 md:order-2 h-1/2 md:h-full relative">
+        <canvas id="simulationCanvas"></canvas>
+        <div id="loadingMessage" class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white text-2xl z-20">
+            Cargando Simulación...
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const controlsDiv = document.getElementById('controls');
+        const bodyParamsContainer = document.getElementById('bodyParamsContainer');
+        const pauseResumeButton = document.getElementById('pauseResumeButton');
+        const resetButton = document.getElementById('resetButton');
+        const addBodyButton = document.getElementById('addBodyButton');
+        const trailLengthInput = document.getElementById('trailLength');
+        const trailLengthValue = document.getElementById('trailLengthValue');
+        const timeStepInput = document.getElementById('timeStep');
+        const timeStepValue = document.getElementById('timeStepValue');
+        const loadingMessage = document.getElementById('loadingMessage');
+
+        let bodies = [];
+        let stars = [];
+        const NUM_STARS = 200;
+        let G = 6.674; // Constante gravitacional (ajustada para la simulación)
+        let dt = 0.01; // Paso de tiempo
+        let trailLength = 150;
+        let isRunning = true;
+        let isDragging = false;
+        let lastMouseX, lastMouseY;
+        let offsetX = 0; 
+        let offsetY = 0;
+        let zoomLevel = 1.0;
+        const MIN_ZOOM = 0.2;
+        const MAX_ZOOM = 5.0;
+        const ZOOM_SENSITIVITY = 0.001;
+        let nextBodyId = 4; // Para asignar IDs a nuevos cuerpos
+
+        // Colores para los cuerpos y sus estelas
+        const bodyColors = [
+            { main: 'orangered', trail: 'rgba(255, 69, 0, 0.7)' },    // Cuerpo 1
+            { main: 'gold', trail: 'rgba(255, 215, 0, 0.7)' },       // Cuerpo 2
+            { main: 'deepskyblue', trail: 'rgba(0, 191, 255, 0.7)' },// Cuerpo 3 (Planeta)
+            { main: 'limegreen', trail: 'rgba(50, 205, 50, 0.7)' },  // Cuerpo 4
+            { main: 'magenta', trail: 'rgba(255, 0, 255, 0.7)' },    // Cuerpo 5
+            { main: 'cyan', trail: 'rgba(0, 255, 255, 0.7)' },       // Cuerpo 6
+            { main: 'yellow', trail: 'rgba(255, 255, 0, 0.7)' },     // Cuerpo 7
+        ];
+
+        // Definición inicial de los cuerpos (mutable)
+        let defaultBodiesConfig = [
+            { id: 1, name: 'Estrella A', m: 1200, x: -250, y: 50, vx: 0.25, vy: 0.2, radius: 12, color: bodyColors[0] },
+            { id: 2, name: 'Estrella B', m: 1500, x: 200, y: -100, vx: -0.15, vy: -0.3, radius: 15, color: bodyColors[1] },
+            { id: 3, name: 'Planeta X', m: 80, x: 50, y: 250, vx: 0.6, vy: -0.4, radius: 8, color: bodyColors[2] }
+        ];
+
+        // Función para crear los campos de entrada para los parámetros de los cuerpos
+        function createBodyParamInputs() {
+            bodyParamsContainer.innerHTML = ''; // Limpiar entradas anteriores
+            defaultBodiesConfig.forEach((bodyConfig) => {
+                const div = document.createElement('div');
+                div.className = 'bg-gray-700 p-3 rounded-lg shadow';
+                div.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-2" style="color: ${bodyConfig.color.main};">${bodyConfig.name} (Cuerpo ${bodyConfig.id})</h3>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <label for="m${bodyConfig.id}">Masa:</label>
+                        <input type="number" id="m${bodyConfig.id}" value="${bodyConfig.m}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <label for="x${bodyConfig.id}">Pos X:</label>
+                        <input type="number" id="x${bodyConfig.id}" value="${bodyConfig.x}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <label for="y${bodyConfig.id}">Pos Y:</label>
+                        <input type="number" id="y${bodyConfig.id}" value="${bodyConfig.y}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <label for="vx${bodyConfig.id}">Vel X:</label>
+                        <input type="number" id="vx${bodyConfig.id}" value="${bodyConfig.vx}" step="0.01" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <label for="vy${bodyConfig.id}">Vel Y:</label>
+                        <input type="number" id="vy${bodyConfig.id}" value="${bodyConfig.vy}" step="0.01" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <label for="radius${bodyConfig.id}">Radio:</label>
+                        <input type="number" id="radius${bodyConfig.id}" value="${bodyConfig.radius}" step="1" min="1" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                    </div>
+                `;
+                bodyParamsContainer.appendChild(div);
+            });
+        }
+        
+        // Inicializar cuerpos desde la configuración o los campos de entrada
+        function initializeBodies() {
+            bodies = [];
+            defaultBodiesConfig.forEach(bConf => {
+                // Intentar leer del DOM, si no existe o es inválido, usar bConf
+                const mInput = document.getElementById(`m${bConf.id}`);
+                const xInput = document.getElementById(`x${bConf.id}`);
+                const yInput = document.getElementById(`y${bConf.id}`);
+                const vxInput = document.getElementById(`vx${bConf.id}`);
+                const vyInput = document.getElementById(`vy${bConf.id}`);
+                const radiusInput = document.getElementById(`radius${bConf.id}`);
+
+                const body = {
+                    id: bConf.id,
+                    name: bConf.name,
+                    m: mInput ? parseFloat(mInput.value) : bConf.m,
+                    x: xInput ? parseFloat(xInput.value) : bConf.x,
+                    y: yInput ? parseFloat(yInput.value) : bConf.y,
+                    vx: vxInput ? parseFloat(vxInput.value) : bConf.vx,
+                    vy: vyInput ? parseFloat(vyInput.value) : bConf.vy,
+                    radius: radiusInput ? parseFloat(radiusInput.value) : bConf.radius,
+                    color: bConf.color,
+                    trail: [],
+                    fx: 0, 
+                    fy: 0  
+                };
+                bodies.push(body);
+            });
+        }
+
+        // Generar estrellas para el fondo
+        function generateStars() {
+            stars = [];
+            for (let i = 0; i < NUM_STARS; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    radius: Math.random() * 1.5,
+                    alpha: Math.random() * 0.5 + 0.5 
+                });
+            }
+        }
+
+        // Ajustar tamaño del canvas y regenerar estrellas
+        function resizeCanvas() {
+            const parent = canvas.parentElement;
+            canvas.width = parent.clientWidth;
+            canvas.height = parent.clientHeight;
+            generateStars(); 
+        }
+
+        // Dibujar todo
+        function draw() {
+            ctx.fillStyle = '#000010'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            stars.forEach(star => {
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;
+                ctx.fill();
+            });
+            
+            ctx.save();
+            ctx.translate(canvas.width / 2 + offsetX, canvas.height / 2 + offsetY);
+            ctx.scale(zoomLevel, zoomLevel);
+
+            bodies.forEach(body => {
+                ctx.beginPath();
+                let firstPoint = true;
+                body.trail.forEach((pos, index) => {
+                    const alpha = (index / body.trail.length) * 0.7; 
+                    const trailColor = body.color.trail.replace(/, [0-9.]+\)/, `, ${alpha})`);
+                    ctx.strokeStyle = trailColor;
+                    if (firstPoint) {
+                        ctx.moveTo(pos.x, pos.y);
+                        firstPoint = false;
+                    } else {
+                        ctx.lineTo(pos.x, pos.y);
+                    }
+                });
+                if (body.trail.length > 1) {
+                     ctx.lineWidth = Math.max(0.5, 2 / zoomLevel); 
+                     ctx.stroke();
+                }
+
+                ctx.beginPath();
+                ctx.arc(body.x, body.y, body.radius, 0, Math.PI * 2);
+                ctx.fillStyle = body.color.main;
+                ctx.fill();
+            });
+            
+            ctx.restore(); 
+        }
+
+        // Actualizar física de la simulación
+        function updatePhysics() {
+            if (!isRunning) return;
+
+            bodies.forEach(body => {
+                body.fx = 0;
+                body.fy = 0;
+            });
+
+            for (let i = 0; i < bodies.length; i++) {
+                for (let j = i + 1; j < bodies.length; j++) {
+                    const body1 = bodies[i];
+                    const body2 = bodies[j];
+
+                    const dx = body2.x - body1.x;
+                    const dy = body2.y - body1.y;
+                    const distSq = dx * dx + dy * dy;
+                    
+                    const epsilon = 250; 
+                    const dist = Math.sqrt(distSq + epsilon); 
+                    
+                    const force = (G * body1.m * body2.m) / (dist * dist * dist); 
+                    
+                    const fx = force * dx;
+                    const fy = force * dy;
+
+                    body1.fx += fx;
+                    body1.fy += fy;
+                    body2.fx -= fx; 
+                    body2.fy -= fy;
+                }
+            }
+
+            bodies.forEach(body => {
+                const ax = body.fx / body.m;
+                const ay = body.fy / body.m;
+
+                body.vx += ax * dt;
+                body.vy += ay * dt;
+
+                body.x += body.vx * dt;
+                body.y += body.vy * dt;
+
+                body.trail.push({ x: body.x, y: body.y });
+                if (body.trail.length > trailLength) {
+                    body.trail.shift(); 
+                }
+            });
+        }
+
+        // Bucle principal de la simulación
+        function simulationLoop() {
+            updatePhysics();
+            draw();
+            requestAnimationFrame(simulationLoop);
+        }
+
+        // Función para agregar un nuevo cuerpo
+        function addNewBody() {
+            const newId = nextBodyId++;
+            const newColor = bodyColors[(newId - 1) % bodyColors.length]; // Ciclar colores
+
+            // Generar valores aleatorios para el nuevo cuerpo
+            const randomM = Math.floor(Math.random() * (800 - 50 + 1)) + 50;
+            const randomX = Math.floor(Math.random() * (300 - (-300) + 1)) + (-300);
+            const randomY = Math.floor(Math.random() * (300 - (-300) + 1)) + (-300);
+            const randomVX = (Math.random() * 1 - 0.5).toFixed(2);
+            const randomVY = (Math.random() * 1 - 0.5).toFixed(2);
+            const randomRadius = Math.floor(Math.random() * (10 - 4 + 1)) + 4;
+
+            const newBodyConfig = {
+                id: newId,
+                name: `Cuerpo ${newId}`,
+                m: randomM,
+                x: randomX,
+                y: randomY,
+                vx: parseFloat(randomVX),
+                vy: parseFloat(randomVY),
+                radius: randomRadius,
+                color: newColor
+            };
+
+            defaultBodiesConfig.push(newBodyConfig);
+            createBodyParamInputs(); // Actualizar los inputs en el panel
+            initializeBodies(); // Re-inicializar los cuerpos para la simulación
+        }
+
+
+        // Manejadores de eventos
+        pauseResumeButton.addEventListener('click', () => {
+            isRunning = !isRunning;
+            pauseResumeButton.textContent = isRunning ? 'Pausar' : 'Reanudar';
+            pauseResumeButton.classList.toggle('bg-blue-500', isRunning);
+            pauseResumeButton.classList.toggle('hover:bg-blue-600', isRunning);
+            pauseResumeButton.classList.toggle('bg-yellow-500', !isRunning);
+            pauseResumeButton.classList.toggle('hover:bg-yellow-600', !isRunning);
+        });
+
+        resetButton.addEventListener('click', () => {
+            // Restablece los cuerpos a los valores actuales de los inputs
+            // No elimina cuerpos agregados, solo resetea sus parámetros a los valores de los inputs
+            initializeBodies(); 
+            isRunning = true;
+            pauseResumeButton.textContent = 'Pausar';
+            pauseResumeButton.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
+            pauseResumeButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
+            offsetX = 0; 
+            offsetY = 0;
+            zoomLevel = 1.0; 
+        });
+
+        addBodyButton.addEventListener('click', addNewBody);
+
+        trailLengthInput.addEventListener('input', (e) => {
+            trailLength = parseInt(e.target.value);
+            trailLengthValue.textContent = trailLength;
+        });
+        
+        timeStepInput.addEventListener('input', (e) => {
+            dt = parseFloat(e.target.value);
+            timeStepValue.textContent = dt.toFixed(3);
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            canvas.style.cursor = 'grabbing';
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const dx = e.clientX - lastMouseX;
+                const dy = e.clientY - lastMouseY;
+                offsetX += dx;
+                offsetY += dy;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            canvas.style.cursor = 'grab';
+        });
+        
+        canvas.addEventListener('mouseleave', () => { 
+            isDragging = false;
+            canvas.style.cursor = 'grab';
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault(); 
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const worldX = (mouseX - canvas.width / 2 - offsetX) / zoomLevel;
+            const worldY = (mouseY - canvas.height / 2 - offsetY) / zoomLevel;
+
+            const zoomFactor = Math.exp(-e.deltaY * ZOOM_SENSITIVITY);
+            const newZoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomLevel * zoomFactor));
+            
+            offsetX -= worldX * (newZoomLevel - zoomLevel);
+            offsetY -= worldY * (newZoomLevel - zoomLevel);
+            
+            zoomLevel = newZoomLevel;
+        });
+
+
+        // Inicialización
+        window.addEventListener('resize', resizeCanvas);
+        
+        setTimeout(() => {
+            createBodyParamInputs();
+            initializeBodies();
+            resizeCanvas(); 
+            simulationLoop(); 
+            loadingMessage.style.display = 'none'; 
+        }, 100);
+
+        trailLengthValue.textContent = trailLengthInput.value;
+        timeStepValue.textContent = parseFloat(timeStepInput.value).toFixed(3);
+
+    </script>
+</body>
+</html>
