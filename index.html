@@ -112,7 +112,7 @@
         const MIN_ZOOM = 0.2;
         const MAX_ZOOM = 5.0;
         const ZOOM_SENSITIVITY = 0.001;
-        let nextBodyId = 4; // Para asignar IDs a nuevos cuerpos
+        let nextBodyIdCounter = 4; // Para asignar IDs únicos a nuevos cuerpos
 
         // Colores para los cuerpos y sus estelas
         const bodyColors = [
@@ -123,10 +123,12 @@
             { main: 'magenta', trail: 'rgba(255, 0, 255, 0.7)' },    // Cuerpo 5
             { main: 'cyan', trail: 'rgba(0, 255, 255, 0.7)' },       // Cuerpo 6
             { main: 'yellow', trail: 'rgba(255, 255, 0, 0.7)' },     // Cuerpo 7
+            { main: 'coral', trail: 'rgba(255, 127, 80, 0.7)'},      // Cuerpo 8
+            { main: 'lightseagreen', trail: 'rgba(32, 178, 170, 0.7)'} // Cuerpo 9
         ];
 
         // Definición inicial de los cuerpos (mutable)
-        let defaultBodiesConfig = [
+        let bodiesConfig = [ // Renombrado de defaultBodiesConfig a bodiesConfig
             { id: 1, name: 'Estrella A', m: 1200, x: -250, y: 50, vx: 0.25, vy: 0.2, radius: 12, color: bodyColors[0] },
             { id: 2, name: 'Estrella B', m: 1500, x: 200, y: -100, vx: -0.15, vy: -0.3, radius: 15, color: bodyColors[1] },
             { id: 3, name: 'Planeta X', m: 80, x: 50, y: 250, vx: 0.6, vy: -0.4, radius: 8, color: bodyColors[2] }
@@ -135,11 +137,12 @@
         // Función para crear los campos de entrada para los parámetros de los cuerpos
         function createBodyParamInputs() {
             bodyParamsContainer.innerHTML = ''; // Limpiar entradas anteriores
-            defaultBodiesConfig.forEach((bodyConfig) => {
+            bodiesConfig.forEach((bodyConfig) => {
                 const div = document.createElement('div');
-                div.className = 'bg-gray-700 p-3 rounded-lg shadow';
+                div.className = 'bg-gray-700 p-3 rounded-lg shadow relative'; // Añadido relative para el botón de eliminar
                 div.innerHTML = `
-                    <h3 class="text-lg font-semibold mb-2" style="color: ${bodyConfig.color.main};">${bodyConfig.name} (Cuerpo ${bodyConfig.id})</h3>
+                    <button class="absolute top-2 right-2 text-red-400 hover:text-red-200 font-bold text-xl" onclick="removeBody(${bodyConfig.id})" title="Eliminar Cuerpo">&times;</button>
+                    <h3 class="text-lg font-semibold mb-2 pr-6" style="color: ${bodyConfig.color.main};">${bodyConfig.name} (Cuerpo ${bodyConfig.id})</h3>
                     <div class="grid grid-cols-2 gap-2 text-sm">
                         <label for="m${bodyConfig.id}">Masa:</label>
                         <input type="number" id="m${bodyConfig.id}" value="${bodyConfig.m}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
@@ -156,38 +159,59 @@
                     </div>
                 `;
                 bodyParamsContainer.appendChild(div);
+
+                // Guardar los valores actuales de los inputs en bodiesConfig para que no se pierdan al recrear inputs
+                const inputs = div.querySelectorAll('input[type="number"]');
+                inputs.forEach(input => {
+                    input.addEventListener('change', (e) => {
+                        const bodyToUpdate = bodiesConfig.find(b => b.id === bodyConfig.id);
+                        if (bodyToUpdate) {
+                            const key = e.target.id.slice(0, -String(bodyConfig.id).length); // Extraer 'm', 'x', 'vx', etc.
+                            bodyToUpdate[key] = parseFloat(e.target.value);
+                            initializeBodies(); // Actualizar la simulación con el nuevo valor
+                        }
+                    });
+                });
             });
         }
         
-        // Inicializar cuerpos desde la configuración o los campos de entrada
+        // Inicializar cuerpos desde la configuración
         function initializeBodies() {
-            bodies = [];
-            defaultBodiesConfig.forEach(bConf => {
-                // Intentar leer del DOM, si no existe o es inválido, usar bConf
-                const mInput = document.getElementById(`m${bConf.id}`);
-                const xInput = document.getElementById(`x${bConf.id}`);
-                const yInput = document.getElementById(`y${bConf.id}`);
-                const vxInput = document.getElementById(`vx${bConf.id}`);
-                const vyInput = document.getElementById(`vy${bConf.id}`);
-                const radiusInput = document.getElementById(`radius${bConf.id}`);
+            bodies = []; // Limpiar el array de cuerpos de la simulación
+            bodiesConfig.forEach(bConf => {
+                // Leer valores de los inputs si existen, sino usar los de bConf
+                const mVal = document.getElementById(`m${bConf.id}`) ? parseFloat(document.getElementById(`m${bConf.id}`).value) : bConf.m;
+                const xVal = document.getElementById(`x${bConf.id}`) ? parseFloat(document.getElementById(`x${bConf.id}`).value) : bConf.x;
+                const yVal = document.getElementById(`y${bConf.id}`) ? parseFloat(document.getElementById(`y${bConf.id}`).value) : bConf.y;
+                const vxVal = document.getElementById(`vx${bConf.id}`) ? parseFloat(document.getElementById(`vx${bConf.id}`).value) : bConf.vx;
+                const vyVal = document.getElementById(`vy${bConf.id}`) ? parseFloat(document.getElementById(`vy${bConf.id}`).value) : bConf.vy;
+                const radiusVal = document.getElementById(`radius${bConf.id}`) ? parseFloat(document.getElementById(`radius${bConf.id}`).value) : bConf.radius;
 
                 const body = {
                     id: bConf.id,
                     name: bConf.name,
-                    m: mInput ? parseFloat(mInput.value) : bConf.m,
-                    x: xInput ? parseFloat(xInput.value) : bConf.x,
-                    y: yInput ? parseFloat(yInput.value) : bConf.y,
-                    vx: vxInput ? parseFloat(vxInput.value) : bConf.vx,
-                    vy: vyInput ? parseFloat(vyInput.value) : bConf.vy,
-                    radius: radiusInput ? parseFloat(radiusInput.value) : bConf.radius,
+                    m: mVal,
+                    x: xVal,
+                    y: yVal,
+                    vx: vxVal,
+                    vy: vyVal,
+                    radius: radiusVal,
                     color: bConf.color,
-                    trail: [],
+                    trail: [], // Las estelas se reinician al inicializar
                     fx: 0, 
                     fy: 0  
                 };
                 bodies.push(body);
             });
         }
+        
+        // Función para eliminar un cuerpo
+        function removeBody(bodyIdToRemove) {
+            bodiesConfig = bodiesConfig.filter(body => body.id !== bodyIdToRemove);
+            createBodyParamInputs(); // Recrear los inputs sin el cuerpo eliminado
+            initializeBodies();      // Actualizar los cuerpos en la simulación
+        }
+
 
         // Generar estrellas para el fondo
         function generateStars() {
@@ -313,10 +337,10 @@
 
         // Función para agregar un nuevo cuerpo
         function addNewBody() {
-            const newId = nextBodyId++;
-            const newColor = bodyColors[(newId - 1) % bodyColors.length]; // Ciclar colores
+            const newId = nextBodyIdCounter++;
+            const newColorIndex = (bodiesConfig.length) % bodyColors.length; // Usar la longitud actual para el índice de color
+            const newColor = bodyColors[newColorIndex];
 
-            // Generar valores aleatorios para el nuevo cuerpo
             const randomM = Math.floor(Math.random() * (800 - 50 + 1)) + 50;
             const randomX = Math.floor(Math.random() * (300 - (-300) + 1)) + (-300);
             const randomY = Math.floor(Math.random() * (300 - (-300) + 1)) + (-300);
@@ -336,9 +360,9 @@
                 color: newColor
             };
 
-            defaultBodiesConfig.push(newBodyConfig);
-            createBodyParamInputs(); // Actualizar los inputs en el panel
-            initializeBodies(); // Re-inicializar los cuerpos para la simulación
+            bodiesConfig.push(newBodyConfig);
+            createBodyParamInputs(); 
+            initializeBodies(); 
         }
 
 
@@ -353,8 +377,17 @@
         });
 
         resetButton.addEventListener('click', () => {
-            // Restablece los cuerpos a los valores actuales de los inputs
-            // No elimina cuerpos agregados, solo resetea sus parámetros a los valores de los inputs
+            // Restablece los parámetros de los cuerpos existentes a los valores en sus inputs.
+            // No re-añade los cuerpos iniciales si fueron eliminados.
+            // Para un reseteo completo a la configuración inicial, se necesitaría otra lógica.
+            bodiesConfig.forEach(bConf => {
+                bConf.m = parseFloat(document.getElementById(`m${bConf.id}`).value) || bConf.m;
+                bConf.x = parseFloat(document.getElementById(`x${bConf.id}`).value) || bConf.x;
+                bConf.y = parseFloat(document.getElementById(`y${bConf.id}`).value) || bConf.y;
+                bConf.vx = parseFloat(document.getElementById(`vx${bConf.id}`).value) || bConf.vx;
+                bConf.vy = parseFloat(document.getElementById(`vy${bConf.id}`).value) || bConf.vy;
+                bConf.radius = parseFloat(document.getElementById(`radius${bConf.id}`).value) || bConf.radius;
+            });
             initializeBodies(); 
             isRunning = true;
             pauseResumeButton.textContent = 'Pausar';
