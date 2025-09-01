@@ -373,8 +373,40 @@
             });
         }
 
+        function updateInputValues() {
+            // Solo actualizar los inputs si la simulación está corriendo
+            if (!isRunning) return;
+            
+            bodies.forEach(body => {
+                // Actualizar el input de posición X
+                const xInput = document.getElementById(`x${body.id}`);
+                if (xInput && !xInput.matches(':focus')) {
+                    xInput.value = Math.round(body.x);
+                }
+                
+                // Actualizar el input de posición Y
+                const yInput = document.getElementById(`y${body.id}`);
+                if (yInput && !yInput.matches(':focus')) {
+                    yInput.value = Math.round(body.y);
+                }
+                
+                // Actualizar el input de velocidad X
+                const vxInput = document.getElementById(`vx${body.id}`);
+                if (vxInput && !vxInput.matches(':focus')) {
+                    vxInput.value = body.vx.toFixed(2);
+                }
+                
+                // Actualizar el input de velocidad Y
+                const vyInput = document.getElementById(`vy${body.id}`);
+                if (vyInput && !vyInput.matches(':focus')) {
+                    vyInput.value = body.vy.toFixed(2);
+                }
+            });
+        }
+
         function simulationLoop() {
             updatePhysics();
+            updateInputValues(); // Actualizar los valores de los inputs
             draw();
             requestAnimationFrame(simulationLoop);
         }
