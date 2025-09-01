@@ -158,35 +158,59 @@
             { main: '#20B2AA', trail: 'rgba(32, 178, 170, 0.7)'}    
         ];
 
-        let bodiesConfig = [ 
+        // Configuración inicial de los cuerpos
+        const initialBodiesConfig = [ 
             { id: 1, name: 'Estrella A', m: 1200, x: -250, y: 50, vx: 0.25, vy: 0.2, radius: 12, color: JSON.parse(JSON.stringify(defaultBodyColorsPalette[0])) },
             { id: 2, name: 'Estrella B', m: 1500, x: 200, y: -100, vx: -0.15, vy: -0.3, radius: 15, color: JSON.parse(JSON.stringify(defaultBodyColorsPalette[1])) },
             { id: 3, name: 'Planeta X', m: 80, x: 50, y: 250, vx: 0.6, vy: -0.4, radius: 8, color: JSON.parse(JSON.stringify(defaultBodyColorsPalette[2])) }
         ];
+        
+        // Configuración actual (se modifica durante la ejecución)
+        let bodiesConfig = JSON.parse(JSON.stringify(initialBodiesConfig));
 
         function createBodyParamInputs() {
             bodyParamsContainer.innerHTML = ''; 
             bodiesConfig.forEach((bodyConfig) => {
+                // Buscar el cuerpo activo si existe para usar sus valores actuales
+                const activeBody = bodies.find(b => b.id === bodyConfig.id);
+                const currentValues = activeBody ? {
+                    m: activeBody.m,
+                    x: activeBody.x.toFixed(0),
+                    y: activeBody.y.toFixed(0),
+                    vx: activeBody.vx.toFixed(2),
+                    vy: activeBody.vy.toFixed(2),
+                    radius: activeBody.radius,
+                    color: activeBody.color.main
+                } : {
+                    m: bodyConfig.m,
+                    x: bodyConfig.x,
+                    y: bodyConfig.y,
+                    vx: bodyConfig.vx,
+                    vy: bodyConfig.vy,
+                    radius: bodyConfig.radius,
+                    color: bodyConfig.color.main
+                };
+                
                 const div = document.createElement('div');
                 div.className = 'bg-gray-700 p-3 rounded-lg shadow relative';
                 div.innerHTML = `
                     <button class="absolute top-2 right-2 text-red-400 hover:text-red-200 font-bold text-xl" onclick="removeBody(${bodyConfig.id})" title="Eliminar Cuerpo">&times;</button>
-                    <h3 class="text-lg font-semibold mb-2 pr-6" style="color: ${bodyConfig.color.main};">${bodyConfig.name} (Cuerpo ${bodyConfig.id})</h3>
+                    <h3 class="text-lg font-semibold mb-2 pr-6" style="color: ${currentValues.color};">${bodyConfig.name} (Cuerpo ${bodyConfig.id})</h3>
                     <div class="grid grid-cols-2 gap-2 text-sm">
                         <label for="m${bodyConfig.id}">Masa:</label>
-                        <input type="number" id="m${bodyConfig.id}" value="${bodyConfig.m}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <input type="number" id="m${bodyConfig.id}" value="${currentValues.m}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
                         <label for="x${bodyConfig.id}">Pos X:</label>
-                        <input type="number" id="x${bodyConfig.id}" value="${bodyConfig.x}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <input type="number" id="x${bodyConfig.id}" value="${currentValues.x}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
                         <label for="y${bodyConfig.id}">Pos Y:</label>
-                        <input type="number" id="y${bodyConfig.id}" value="${bodyConfig.y}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <input type="number" id="y${bodyConfig.id}" value="${currentValues.y}" step="10" class="input-number-sm bg-gray-600 p-1 rounded w-full">
                         <label for="vx${bodyConfig.id}">Vel X:</label>
-                        <input type="number" id="vx${bodyConfig.id}" value="${bodyConfig.vx}" step="0.01" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <input type="number" id="vx${bodyConfig.id}" value="${currentValues.vx}" step="0.01" class="input-number-sm bg-gray-600 p-1 rounded w-full">
                         <label for="vy${bodyConfig.id}">Vel Y:</label>
-                        <input type="number" id="vy${bodyConfig.id}" value="${bodyConfig.vy}" step="0.01" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <input type="number" id="vy${bodyConfig.id}" value="${currentValues.vy}" step="0.01" class="input-number-sm bg-gray-600 p-1 rounded w-full">
                         <label for="radius${bodyConfig.id}">Radio:</label>
-                        <input type="number" id="radius${bodyConfig.id}" value="${bodyConfig.radius}" step="1" min="1" class="input-number-sm bg-gray-600 p-1 rounded w-full">
+                        <input type="number" id="radius${bodyConfig.id}" value="${currentValues.radius}" step="1" min="1" class="input-number-sm bg-gray-600 p-1 rounded w-full">
                         <label for="color${bodyConfig.id}">Color:</label>
-                        <input type="color" id="color${bodyConfig.id}" value="${bodyConfig.color.main}" class="w-full">
+                        <input type="color" id="color${bodyConfig.id}" value="${currentValues.color}" class="w-full">
                     </div>
                 `;
                 bodyParamsContainer.appendChild(div);
@@ -199,11 +223,16 @@
                         const key = e.target.id.slice(0, -String(bodyConfig.id).length);
                         const newValue = parseFloat(e.target.value);
                         if (Number.isNaN(newValue)) return;
-                        // Actualiza la configuración y el cuerpo activo sin reinicializar toda la simulación
+                        // Actualiza la configuración
                         bodyConfigToUpdate[key] = newValue;
+                        // Actualiza el cuerpo activo si existe
                         const liveBodyToUpdate = bodies.find(b => b.id === bodyConfig.id);
                         if (liveBodyToUpdate && key in liveBodyToUpdate) {
                             liveBodyToUpdate[key] = newValue;
+                            // Si se cambia la posición, limpiar la estela para evitar líneas largas
+                            if (key === 'x' || key === 'y') {
+                                liveBodyToUpdate.trail = [];
+                            }
                         }
                     });
                 });
@@ -259,9 +288,12 @@
         }
         
         function removeBody(bodyIdToRemove) {
+            // Eliminar de la configuración
             bodiesConfig = bodiesConfig.filter(body => body.id !== bodyIdToRemove);
+            // Eliminar del array de cuerpos activos sin reiniciar la simulación
+            bodies = bodies.filter(body => body.id !== bodyIdToRemove);
+            // Recrear los controles
             createBodyParamInputs(); 
-            initializeBodies();      
         }
 
         function generateStars() {
@@ -363,9 +395,28 @@
                 vx: parseFloat(randomVX), vy: parseFloat(randomVY), 
                 radius: randomRadius, color: newColor
             };
+            // Agregar a la configuración
             bodiesConfig.push(newBodyConfig);
+            
+            // Crear el nuevo cuerpo y agregarlo al array activo sin reiniciar la simulación
+            const newBody = {
+                id: newBodyConfig.id, 
+                name: newBodyConfig.name,
+                m: newBodyConfig.m, 
+                x: newBodyConfig.x, 
+                y: newBodyConfig.y, 
+                vx: newBodyConfig.vx, 
+                vy: newBodyConfig.vy, 
+                radius: newBodyConfig.radius,
+                color: { main: newColor.main, trail: newColor.trail }, 
+                trail: [], 
+                fx: 0, 
+                fy: 0  
+            };
+            bodies.push(newBody);
+            
+            // Recrear los controles
             createBodyParamInputs(); 
-            initializeBodies(); 
         }
 
         pauseResumeButton.addEventListener('click', () => {
@@ -378,30 +429,26 @@
         });
 
         resetButton.addEventListener('click', () => {
-            bodiesConfig.forEach(bConf => {
-                bConf.m = parseFloat(document.getElementById(`m${bConf.id}`).value) || bConf.m;
-                bConf.x = parseFloat(document.getElementById(`x${bConf.id}`).value) || bConf.x;
-                bConf.y = parseFloat(document.getElementById(`y${bConf.id}`).value) || bConf.y;
-                bConf.vx = parseFloat(document.getElementById(`vx${bConf.id}`).value) || bConf.vx;
-                bConf.vy = parseFloat(document.getElementById(`vy${bConf.id}`).value) || bConf.vy;
-                bConf.radius = parseFloat(document.getElementById(`radius${bConf.id}`).value) || bConf.radius;
-                const colorInput = document.getElementById(`color${bConf.id}`);
-                if (colorInput) {
-                    const newMainColorHex = colorInput.value;
-                    bConf.color.main = newMainColorHex;
-                    let r = 0, g = 0, b = 0;
-                    if (newMainColorHex.length === 7) { r = parseInt(newMainColorHex.slice(1, 3), 16); g = parseInt(newMainColorHex.slice(3, 5), 16); b = parseInt(newMainColorHex.slice(5, 7), 16);
-                    } else if (newMainColorHex.length === 4) { r = parseInt(newMainColorHex[1] + newMainColorHex[1], 16); g = parseInt(newMainColorHex[2] + newMainColorHex[2], 16); b = parseInt(newMainColorHex[3] + newMainColorHex[3], 16); }
-                    bConf.color.trail = `rgba(${r},${g},${b},0.7)`;
-                }
-            });
+            // Restaurar la configuración inicial (incluyendo cuerpos eliminados)
+            bodiesConfig = JSON.parse(JSON.stringify(initialBodiesConfig));
+            
+            // Resetear el contador de IDs
+            nextBodyIdCounter = 4;
+            
+            // Recrear los controles y reinicializar los cuerpos
             createBodyParamInputs(); 
             initializeBodies(); 
+            
+            // Reanudar la simulación si estaba pausada
             isRunning = true;
             pauseResumeButton.textContent = 'Pausar';
             pauseResumeButton.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
             pauseResumeButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
-            offsetX = 0; offsetY = 0; zoomLevel = 1.0; 
+            
+            // Resetear la vista
+            offsetX = 0; 
+            offsetY = 0; 
+            zoomLevel = 1.0; 
         });
 
         addBodyButton.addEventListener('click', addNewBody);
